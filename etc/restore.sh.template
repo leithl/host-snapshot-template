@@ -1,0 +1,143 @@
+#!/bin/bash
+# restore.sh — TEMPLATE
+#
+# Rebuild a host from <you>/<host>-etc + <you>/dotfiles repos.
+#
+# CUSTOMIZATION: replace placeholders before publishing this file in your <host>-etc repo:
+#   <YOU>           → your GitHub username
+#   <HOST>          → the host name (e.g. webserver, mediabox)
+#   <DOTFILES_HOST_DIR>  → which subdir of dotfiles holds this host's user files
+#                          (probably matches <HOST>)
+#
+# PREREQUISITES on a fresh Ubuntu install:
+#   1. The user that will own /home/<user> exists with sudo.
+#   2. `gh` CLI authenticated:
+#        sudo apt install -y gh
+#        gh auth login
+#   3. This repo cloned somewhere accessible:
+#        gh repo clone <YOU>/<HOST>-etc /tmp/<HOST>-etc
+#
+# THEN:
+#   bash /tmp/<HOST>-etc/restore.sh
+#
+# Idempotent enough to re-run; never touches deliberately-not-tracked
+# secrets (passwords, SSH host keys, TLS keys, mail-relay creds).
+
+set -euo pipefail
+
+ETC_DIR="${ETC_DIR:-$(cd "$(dirname "$(readlink -f "$0")")" && pwd)}"
+DOTFILES_DIR="${DOTFILES_DIR:-$HOME/dotfiles}"
+HOST_NAME="<HOST>"
+DOTFILES_HOST_SUBDIR="<DOTFILES_HOST_DIR>"
+GH_USER="<YOU>"
+
+if [ "$(id -u)" -eq 0 ]; then
+  echo "ERROR: don't run as root - run as the target user (sudo elevations happen inline)." >&2
+  exit 1
+fi
+if [ ! -f "$ETC_DIR/system-snapshot/apt-manual.txt" ]; then
+  echo "ERROR: $ETC_DIR doesn't look like an etckeeper checkout (no system-snapshot/apt-manual.txt)" >&2
+  exit 1
+fi
+USER_NAME="$(id -un)"
+
+echo "==> [1/8] Installing bootstrap tools..."
+sudo apt-get update -qq
+sudo apt-get install -y etckeeper git rsync gh
+# Add `mdadm` here if your host uses Linux software RAID, etc.
+
+echo "==> [2/8] Cloning dotfiles repo (skipped if $DOTFILES_DIR exists)..."
+if [ ! -d "$DOTFILES_DIR" ]; then
+  gh repo clone "$GH_USER/dotfiles" "$DOTFILES_DIR"
+fi
+
+echo "==> [3/8] Reinstalling apt-managed packages..."
+xargs -a "$ETC_DIR/system-snapshot/apt-manual.txt" sudo apt-get install -y || true
+
+echo "==> [4/8] Reinstalling snaps (if any)..."
+if [ -f "$ETC_DIR/system-snapshot/snap-list.txt" ]; then
+  awk 'NR>1 {print $1}' "$ETC_DIR/system-snapshot/snap-list.txt" \
+    | xargs -L1 -r sudo snap install 2>/dev/null || true
+fi
+
+echo "==> [5/8] Materializing /etc (excluding git internals + this script)..."
+sudo rsync -a --exclude='.git/' --exclude='.gitignore' --exclude='.etckeeper' \
+  --exclude='.updated' --exclude='/restore.sh' --exclude='/README.md' \
+  "$ETC_DIR/" /etc/
+
+echo "==> [6/8] Restoring /usr/local/bin custom scripts (if any)..."
+if [ -d "$ETC_DIR/system-snapshot/usr-local-bin" ]; then
+  sudo rsync -a "$ETC_DIR/system-snapshot/usr-local-bin/" /usr/local/bin/
+fi
+
+echo "==> [7/8] Restoring crontabs..."
+if [ -f "$ETC_DIR/system-snapshot/root-crontab" ]; then
+  sudo install -o root -g crontab -m 600 \
+    "$ETC_DIR/system-snapshot/root-crontab" /var/spool/cron/crontabs/root
+fi
+if [ -f "$ETC_DIR/system-snapshot/${USER_NAME}-crontab" ]; then
+  sudo install -o "$USER_NAME" -g crontab -m 600 \
+    "$ETC_DIR/system-snapshot/${USER_NAME}-crontab" \
+    "/var/spool/cron/crontabs/$USER_NAME"
+fi
+
+echo "==> [8/8] Restoring user-level dotfiles from $DOTFILES_DIR/$DOTFILES_HOST_SUBDIR/..."
+HOST_DIR="$DOTFILES_DIR/$DOTFILES_HOST_SUBDIR"
+if [ -d "$HOST_DIR" ]; then
+  for f in .bashrc .profile .gitconfig .vimrc; do
+    [ -f "$HOST_DIR/$f" ] && cp -p "$HOST_DIR/$f" "$HOME/$f"
+  done
+  # Add other host-specific restore steps here, e.g.:
+  # [ -d "$HOST_DIR/scripts" ] && rsync -a "$HOST_DIR/scripts/" "$HOME/scripts/"
+fi
+
+cat <<NEXT
+
+==========================================================
+SYSTEM + USER STATE RESTORED.
+
+THINGS YOU MUST DO MANUALLY (deliberately not tracked):
+
+1. Set user password:
+     sudo passwd $USER_NAME
+
+2. Regenerate SSH host keys (clients will need a known-hosts refresh):
+     sudo rm /etc/ssh/ssh_host_*_key{,.pub}
+     sudo ssh-keygen -A
+     sudo systemctl restart ssh
+
+3. (If your host runs TLS via Let's Encrypt:)
+     sudo certbot --apache  # or --nginx, with the same domains as before
+     # DNS must point at the new host first.
+
+4. (If your host sends mail via msmtp/postfix:)
+     sudo \$EDITOR /etc/msmtprc           # or /etc/postfix/sasl_passwd
+     # Re-add the relay password.
+     sudo postmap /etc/postfix/sasl_passwd  # if postfix
+
+5. (If your host has Linux software RAID:)
+     sudo mdadm --assemble --scan && sudo update-initramfs -u
+
+6. Re-arm etckeeper auto-push:
+     # New deploy key for the rebuilt host
+     sudo ssh-keygen -t ed25519 -f /root/.ssh/${HOST_NAME}-etc_deploy -N '' -C ${HOST_NAME}-etc-root
+     sudo cat /root/.ssh/${HOST_NAME}-etc_deploy.pub
+     # Add the printed key as a Deploy Key on github.com/${GH_USER}/${HOST_NAME}-etc with write access.
+     sudo tee -a /root/.ssh/config >/dev/null <<EOF
+
+Host github-${HOST_NAME}-etc
+  HostName github.com
+  User git
+  IdentityFile /root/.ssh/${HOST_NAME}-etc_deploy
+  IdentitiesOnly yes
+EOF
+     sudo chmod 600 /root/.ssh/config
+     sudo cp -r '$ETC_DIR/.git' /etc/.git
+     sudo git -C /etc remote set-url origin git@github-${HOST_NAME}-etc:${GH_USER}/${HOST_NAME}-etc.git
+     sudo etckeeper commit "Restored from backup"
+
+7. Re-arm dotfiles auto-snapshot cron (after generating a dotfiles deploy key):
+     ( crontab -l 2>/dev/null; echo "*/15 * * * * \$HOME/dotfiles/bin/${HOST_NAME}-snapshot.sh >>/tmp/dotfiles-backup.out 2>>/tmp/dotfiles-backup.err" ) | crontab -
+
+==========================================================
+NEXT
