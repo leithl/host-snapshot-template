@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  TEMPLATE — copy to com.<you>.dotfiles-backup.plist and replace placeholders.
+
+  Replace:
+    <YOUR_USERNAME>     → your macOS username (e.g. `alice` if home is /Users/alice)
+    <REVERSE_DOMAIN>    → reverse-DNS for the Label, e.g. com.alice.dotfiles-backup
+    <WATCH_DIR>         → directory fswatch will watch (e.g. $HOME/.claude or $HOME/Documents/configs)
+    <EXCLUDE_PATTERNS>  → fswatch --exclude flags for noisy subpaths (see comments)
+
+  Then:
+    cp this-file ~/Library/LaunchAgents/com.<you>.dotfiles-backup.plist
+    launchctl load ~/Library/LaunchAgents/com.<you>.dotfiles-backup.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string><REVERSE_DOMAIN></string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <!--
+      fswatch -o emits one line per debounced batch of FS events.
+      -l 30 = wait for 30s of quiet before reporting (debounce).
+      Add --exclude flags for noisy paths, e.g. log/cache dirs:
+        --exclude='\.git/' --exclude='/cache/' --exclude='/sessions/'
+      The xargs invokes the snapshot script once per batch.
+    -->
+    <string>/opt/homebrew/bin/fswatch -o -l 30 <EXCLUDE_PATTERNS> "<WATCH_DIR>" | xargs -n1 -I{} "$HOME/dotfiles/bin/laptop-snapshot.sh"</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/dotfiles-backup.out</string>
+
+  <key>StandardErrorPath</key>
+  <string>/tmp/dotfiles-backup.err</string>
+
+  <!--
+    launchd jobs start with a minimal environment. Set HOME and PATH
+    explicitly so the snapshot script can find git + gh + fswatch.
+  -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/<YOUR_USERNAME></string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+</dict>
+</plist>

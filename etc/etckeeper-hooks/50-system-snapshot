@@ -1,0 +1,33 @@
+#!/bin/sh
+# /etc/etckeeper/pre-commit.d/50-system-snapshot
+#
+# TEMPLATE — install this file at /etc/etckeeper/pre-commit.d/50-system-snapshot,
+# chmod +x. Runs before each etckeeper commit and dumps system state into
+# /etc/system-snapshot/ so etckeeper picks it up on the same commit.
+#
+# CUSTOMIZATION:
+#   - Edit the USERS list to match local accounts whose crontabs you want backed up.
+#   - Comment out items you don't want (e.g. snap-list on a server with no snaps).
+
+set -u
+SNAP=/etc/system-snapshot
+mkdir -p "$SNAP/usr-local-bin"
+chmod 700 "$SNAP"
+
+# Crontabs — edit USERS to match your accounts
+USERS="root <youruser>"
+for user in $USERS; do
+  src="/var/spool/cron/crontabs/$user"
+  if [ -f "$src" ]; then
+    cp "$src" "$SNAP/${user}-crontab"
+  fi
+done
+
+# Package manifests + system metadata
+apt-mark showmanual > "$SNAP/apt-manual.txt" 2>/dev/null || true
+snap list > "$SNAP/snap-list.txt" 2>/dev/null || true
+{ uname -a; echo; cat /proc/cmdline; } > "$SNAP/kernel.txt" 2>/dev/null
+{ lsblk -o NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE; echo; cat /proc/mdstat 2>/dev/null; } > "$SNAP/disks.txt"
+
+# Custom scripts in /usr/local/bin (skip if your host has nothing custom there)
+rsync -a --delete /usr/local/bin/ "$SNAP/usr-local-bin/" 2>/dev/null || true

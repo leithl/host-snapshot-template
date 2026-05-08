@@ -1,0 +1,37 @@
+# Drop into your dotfiles repo as `.gitignore`.
+# Defense-in-depth — the snapshot scripts use a whitelist model so this
+# is a secondary safety net, not the primary exclusion mechanism.
+
+# --- Editor temp/swap/backup files ---
+# vim swap files briefly contain every byte of the file being edited,
+# including secrets mid-removal. Never track them.
+*.swp
+*.swo
+.*.sw?
+*~
+.#*
+\#*\#
+.vscode-tmp/
+.DS_Store
+
+# --- Logs ---
+*.log
+
+# --- Local-machine overrides ---
+*.local.json
+settings.local.json
+
+# --- Common credential-bearing files (in case you accidentally whitelist a parent dir) ---
+.env
+.env.*
+credentials*.json
+*.pem
+*.key
+.netrc
+.npmrc
+.pypirc
+.aws/
+.ssh/
+.gnupg/
+.credentials.json
+.claude.json
