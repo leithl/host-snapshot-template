@@ -31,3 +31,12 @@ snap list > "$SNAP/snap-list.txt" 2>/dev/null || true
 
 # Custom scripts in /usr/local/bin (skip if your host has nothing custom there)
 rsync -a --delete /usr/local/bin/ "$SNAP/usr-local-bin/" 2>/dev/null || true
+
+# Re-stage system-snapshot/ so updates land in THIS commit, not the next one.
+# Etckeeper's commit.d/30git-add runs before commit.d/50vcs-commit, and this
+# pre-commit.d/ script only fires from git's pre-commit hook (which runs from
+# inside that git commit, after the initial `git add --all`). Without this
+# explicit re-stage, files newly created or modified here would be left as
+# untracked/modified in the working tree and would have to wait for the *next*
+# etckeeper commit to land in the repo.
+git -C /etc add -A system-snapshot/ 2>/dev/null || true
