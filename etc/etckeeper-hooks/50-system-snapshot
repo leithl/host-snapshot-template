@@ -29,23 +29,15 @@ snap list > "$SNAP/snap-list.txt" 2>/dev/null || true
 { uname -a; echo; cat /proc/cmdline; } > "$SNAP/kernel.txt" 2>/dev/null
 { lsblk -o NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE; echo; cat /proc/mdstat 2>/dev/null; } > "$SNAP/disks.txt"
 
+# Firewall state: read-back of running iptables/ip6tables (incl. UFW chains,
+# wg-quick PostUp adds, netfilter-persistent, anything ad-hoc). Not a deploy
+# artifact — UFW config and any /etc/iptables/rules.v4 are restored via /etc
+# directly; this is the diffable record of what actually ended up loaded.
+command -v iptables-save  >/dev/null 2>&1 && iptables-save  > "$SNAP/iptables.rules.v4" 2>/dev/null || true
+command -v ip6tables-save >/dev/null 2>&1 && ip6tables-save > "$SNAP/iptables.rules.v6" 2>/dev/null || true
+
 # Custom scripts in /usr/local/bin (skip if your host has nothing custom there)
 rsync -a --delete /usr/local/bin/ "$SNAP/usr-local-bin/" 2>/dev/null || true
-
-# WireGuard topology — snapshot wg0.conf with PrivateKey/PresharedKey lines redacted,
-# so peer pubkeys + AllowedIPs + PostUp/PostDown rules survive a host rebuild.
-# /etc/wireguard/ itself stays gitignored (private keys live there).
-# Output files at top level of $SNAP to avoid colliding with the bare `wireguard`
-# gitignore pattern (which would match any directory named `wireguard` anywhere).
-if [ -d /etc/wireguard ]; then
-  for f in /etc/wireguard/*.conf; do
-    [ -f "$f" ] || continue
-    out="$SNAP/$(basename "$f").sanitized"
-    sed -E -e 's/^(PrivateKey[[:space:]]*=).*/\1 REDACTED/' \
-           -e 's/^(PresharedKey[[:space:]]*=).*/\1 REDACTED/' \
-           "$f" > "$out"
-  done
-fi
 
 # Re-stage system-snapshot/ so updates land in THIS commit, not the next one.
 # Etckeeper's commit.d/30git-add runs before commit.d/50vcs-commit, and this

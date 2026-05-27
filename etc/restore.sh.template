@@ -118,7 +118,12 @@ THINGS YOU MUST DO MANUALLY (deliberately not tracked):
 5. (If your host has Linux software RAID:)
      sudo mdadm --assemble --scan && sudo update-initramfs -u
 
-6. Re-arm etckeeper auto-push:
+6. (If your host uses WireGuard or OpenVPN with NAT/MASQUERADE rules in PostUp/up-scripts:)
+   Those config files contain private keys and are deliberately untracked. Recreate
+   them by hand. Reference \`/etc/system-snapshot/iptables.rules.v{4,6}\` for the
+   NAT rules that need to be re-added via PostUp / up-script.
+
+7. Re-arm etckeeper auto-push:
      # New deploy key for the rebuilt host
      sudo ssh-keygen -t ed25519 -f /root/.ssh/${HOST_NAME}-etc_deploy -N '' -C ${HOST_NAME}-etc-root
      sudo cat /root/.ssh/${HOST_NAME}-etc_deploy.pub
@@ -136,7 +141,7 @@ EOF
      sudo git -C /etc remote set-url origin git@github-${HOST_NAME}-etc:${GH_USER}/${HOST_NAME}-etc.git
      sudo etckeeper commit "Restored from backup"
 
-7. Re-arm dotfiles auto-snapshot cron (after generating a dotfiles deploy key):
+8. Re-arm dotfiles auto-snapshot cron (after generating a dotfiles deploy key):
      ( crontab -l 2>/dev/null; echo "*/15 * * * * \$HOME/dotfiles/bin/${HOST_NAME}-snapshot.sh >>/tmp/dotfiles-backup.out 2>>/tmp/dotfiles-backup.err" ) | crontab -
 
 ==========================================================

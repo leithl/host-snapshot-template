@@ -3,7 +3,7 @@
 A pattern for **automatically backing up host configuration to private git repos** across multiple machines. Two layers, both push themselves to git on a timer:
 
 1. **`dotfiles/`** — user-level configs (`~/.zshrc`, `~/.config/`, etc.). Each host runs a snapshot script that copies whitelisted files into a host-specific subdir, then commits and pushes.
-2. **`etc/`** — system-level config (`/etc/`). Managed by [`etckeeper`](https://etckeeper.branchable.com/) (a wrapper around git that hooks into `apt`/`dpkg` for instant commits on package install). Plus a pre-commit hook that captures non-`/etc` rebuild artifacts (package manifest, kernel info, custom scripts in `/usr/local/bin/`, crontabs) into `/etc/system-snapshot/`.
+2. **`etc/`** — system-level config (`/etc/`). Managed by [`etckeeper`](https://etckeeper.branchable.com/) (a wrapper around git that hooks into `apt`/`dpkg` for instant commits on package install). Plus a pre-commit hook that captures non-`/etc` rebuild artifacts (package manifest, kernel info, custom scripts in `/usr/local/bin/`, crontabs, iptables state) into `/etc/system-snapshot/`.
 
 Each layer pushes to its own private repo. **Together they form a catastrophic-rebuild kit per host** — clone the two repos on a fresh OS install, run the included `restore.sh`, and you're 90% back. The remaining 10% is deliberately not tracked: passwords, SSH host keys, TLS private keys, mail-relay creds. Those are listed in the README of each repo so you know what to recreate.
 
