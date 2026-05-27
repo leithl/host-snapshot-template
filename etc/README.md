@@ -21,6 +21,7 @@ The pre-commit hook in this template (`etckeeper-hooks/50-system-snapshot`) runs
 - `kernel.txt`, `disks.txt`, `snap-list.txt`
 - `usr-local-bin/` — copy of `/usr/local/bin/*` (your custom scripts)
 - `root-crontab`, `<user>-crontab` — copies from `/var/spool/cron/crontabs/`
+- `*.conf.sanitized` — copies of `/etc/wireguard/*.conf` with `PrivateKey =` / `PresharedKey =` redacted. Preserves topology (peer pubkeys, AllowedIPs, PostUp/PostDown rules) for a rebuild without leaking secrets. Skipped if `/etc/wireguard/` doesn't exist.
 
 That dir lives inside `/etc/`, so etckeeper tracks it. Result: clone the repo on a fresh box and you have everything to rebuild — `/etc` plus the rebuild-kit metadata.
 
