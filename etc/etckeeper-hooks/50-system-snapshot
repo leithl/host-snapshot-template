@@ -36,6 +36,16 @@ snap list > "$SNAP/snap-list.txt" 2>/dev/null || true
 command -v iptables-save  >/dev/null 2>&1 && iptables-save  > "$SNAP/iptables.rules.v4" 2>/dev/null || true
 command -v ip6tables-save >/dev/null 2>&1 && ip6tables-save > "$SNAP/iptables.rules.v6" 2>/dev/null || true
 
+# WireGuard configs: sanitized copies (private/preshared keys redacted) so the
+# WG topology + PostUp/PostDown rules are captured here even though /etc/wireguard
+# is gitignored (it holds the live private keys). Covers every wg*.conf.
+if [ -d /etc/wireguard ]; then
+  for _wgconf in /etc/wireguard/*.conf; do
+    [ -e "$_wgconf" ] || continue
+    sed -E 's/^([[:space:]]*(PrivateKey|PresharedKey)[[:space:]]*=[[:space:]]*).*/\1<redacted>/' "$_wgconf" > "$SNAP/$(basename "$_wgconf").sanitized"
+  done
+fi
+
 # Custom scripts in /usr/local/bin (skip if your host has nothing custom there)
 rsync -a --delete /usr/local/bin/ "$SNAP/usr-local-bin/" 2>/dev/null || true
 
