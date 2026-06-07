@@ -14,9 +14,12 @@ SNAP=/etc/system-snapshot
 mkdir -p "$SNAP/usr-local-bin"
 chmod 700 "$SNAP"
 
-# Crontabs — edit USERS to match your accounts
+# Crontabs — edit USERS to match your accounts.
 USERS="root <youruser>"
 for user in $USERS; do
+  # Skip unsubstituted template placeholder so a missed customization step
+  # is explicit in the code, not silently swallowed by the [ -f ] guard.
+  case "$user" in "<youruser>") continue ;; esac
   src="/var/spool/cron/crontabs/$user"
   if [ -f "$src" ]; then
     cp "$src" "$SNAP/${user}-crontab"
